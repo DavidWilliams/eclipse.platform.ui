@@ -2439,6 +2439,23 @@ UIEvents.UIElement.TOPIC_TOBERENDERED,
 		}
 	}
 
+	ArrayList getPerspectiveExtensionActionSets(String id) {
+		IPerspectiveDescriptor desc = getWorkbenchWindow().getWorkbench().getPerspectiveRegistry()
+				.findPerspectiveWithId(id);
+		if (desc != null) {
+			MPerspective temporary = AdvancedFactoryImpl.eINSTANCE.createPerspective();
+			ModeledPageLayout modelLayout = new ModeledPageLayout(window, modelService,
+					partService, temporary, desc, this, true);
+
+			PerspectiveExtensionReader reader = new PerspectiveExtensionReader();
+			reader.setIncludeOnlyTags(new String[] { IWorkbenchRegistryConstants.TAG_ACTION_SET });
+			reader.extendLayout(null, id, modelLayout);
+			return new ArrayList(ModeledPageLayout.getIds(temporary,
+					ModeledPageLayout.ACTION_SET_TAG));
+		}
+		return null;
+	}
+
 	/**
 	 * Copies action set extensions from the temporary perspective to the other
 	 * one.
@@ -4496,5 +4513,13 @@ UIEvents.UIElement.TOPIC_TOBERENDERED,
 
 		persp.getTags().removeAll(existingNewWizards);
 		persp.getTags().addAll(newWizards);
+	}
+
+	/**
+	 * 
+	 */
+	public void resetToolBarLayout() {
+		ICoolBarManager2 mgr = (ICoolBarManager2) legacyWindow.getCoolBarManager2();
+		mgr.resetItemOrder();
 	}
 }

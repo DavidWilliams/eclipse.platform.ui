@@ -1531,6 +1531,10 @@ public class WorkbenchWindow implements IWorkbenchWindow {
 		return getActionBarAdvisor().isApplicationMenu(menuID);
 	}
 
+	boolean isWorkbenchCoolItemId(String id) {
+		return windowConfigurer.containsCoolItem(id);
+	}
+
 	/**
 	 * Called when this window is about to be closed.
 	 */
