@@ -88,6 +88,7 @@ import org.eclipse.jface.action.StatusLineManager;
 import org.eclipse.jface.commands.ActionHandler;
 import org.eclipse.jface.dialogs.IDialogConstants;
 import org.eclipse.jface.internal.provisional.action.CoolBarManager2;
+import org.eclipse.jface.internal.provisional.action.ICoolBarManager2;
 import org.eclipse.jface.internal.provisional.action.IToolBarManager2;
 import org.eclipse.jface.internal.provisional.action.ToolBarManager2;
 import org.eclipse.jface.operation.IRunnableWithProgress;
@@ -115,6 +116,7 @@ import org.eclipse.ui.ISaveablePart;
 import org.eclipse.ui.ISelectionService;
 import org.eclipse.ui.ISources;
 import org.eclipse.ui.IWorkbench;
+import org.eclipse.ui.IWorkbenchActionConstants;
 import org.eclipse.ui.IWorkbenchPage;
 import org.eclipse.ui.IWorkbenchPart;
 import org.eclipse.ui.IWorkbenchPartReference;
@@ -150,6 +152,7 @@ import org.eclipse.ui.internal.misc.UIListenerLogging;
 import org.eclipse.ui.internal.progress.ProgressRegion;
 import org.eclipse.ui.internal.provisional.application.IActionBarConfigurer2;
 import org.eclipse.ui.internal.provisional.presentations.IActionBarPresentationFactory;
+import org.eclipse.ui.internal.registry.IActionSetDescriptor;
 import org.eclipse.ui.internal.registry.IWorkbenchRegistryConstants;
 import org.eclipse.ui.internal.registry.UIExtensionTracker;
 import org.eclipse.ui.internal.services.EvaluationReference;
@@ -1845,6 +1848,30 @@ public class WorkbenchWindow implements IWorkbenchWindow {
 			return;
 		}
 
+		WorkbenchPage currentPage = (WorkbenchPage) getActivePage();
+		if (currentPage == null) {
+			getActionPresentation().clearActionSets();
+		} else {
+			ICoolBarManager2 coolBarManager = (ICoolBarManager2) getCoolBarManager2();
+			if (coolBarManager != null) {
+				coolBarManager.refresh();
+			}
+			getActionPresentation().setActionSets(currentPage.getActionSets());
+		}
+		fireActionSetsChanged();
+		updateActionBars();
+
+		// hide the launch menu if it is empty
+		String path = IWorkbenchActionConstants.M_WINDOW + IWorkbenchActionConstants.SEP
+				+ IWorkbenchActionConstants.M_LAUNCH;
+		IMenuManager manager = getMenuBarManager().findMenuUsingPath(path);
+		IContributionItem item = getMenuBarManager().findUsingPath(path);
+
+		if (manager == null || item == null) {
+			return;
+		}
+		item.setVisible(manager.getItems().length >= 2);
+		// there is a separator for the additions group thus >= 2
 	}
 
 	private ListenerList actionSetListeners = null;
@@ -1854,6 +1881,26 @@ public class WorkbenchWindow implements IWorkbenchWindow {
 	private ISelectionService selectionService;
 
 	private ITrimManager trimManager;
+
+	private ActionPresentation actionPresentation;
+
+	private final void fireActionSetsChanged() {
+		if (actionSetListeners != null) {
+			final Object[] listeners = actionSetListeners.getListeners();
+			for (int i = 0; i < listeners.length; i++) {
+				final IActionSetsListener listener = (IActionSetsListener) listeners[i];
+				final WorkbenchPage currentPage = (WorkbenchPage) getActivePage();
+				final IActionSetDescriptor[] newActionSets;
+				if (currentPage == null) {
+					newActionSets = null;
+				} else {
+					newActionSets = currentPage.getActionSets();
+				}
+				final ActionSetsEvent event = new ActionSetsEvent(newActionSets);
+				listener.actionSetsChanged(event);
+			}
+		}
+	}
 
 	final void addActionSetsListener(final IActionSetsListener listener) {
 		if (actionSetListeners == null) {
@@ -2049,6 +2096,13 @@ public class WorkbenchWindow implements IWorkbenchWindow {
 	 */
 	public boolean getCoolBarVisible() {
 		return getWindowConfigurer().getShowCoolBar() && coolBarVisible;
+	}
+
+	public ActionPresentation getActionPresentation() {
+		if (actionPresentation == null) {
+			actionPresentation = new ActionPresentation(this);
+		}
+		return actionPresentation;
 	}
 
 	/**

@@ -24,8 +24,8 @@ import org.eclipse.e4.ui.model.application.ui.advanced.MPerspective;
 import org.eclipse.ui.IMemento;
 import org.eclipse.ui.IPerspectiveDescriptor;
 import org.eclipse.ui.IWorkbenchPartReference;
-import org.eclipse.ui.WorkbenchException;
 import org.eclipse.ui.contexts.IContextService;
+import org.eclipse.ui.internal.e4.compatibility.ModeledPageLayout;
 import org.eclipse.ui.internal.registry.ActionSetRegistry;
 import org.eclipse.ui.internal.registry.IActionSetDescriptor;
 import org.eclipse.ui.internal.registry.PerspectiveDescriptor;
@@ -85,16 +85,16 @@ public class Perspective {
     /**
      * ViewManager constructor comment.
      */
-    public Perspective(PerspectiveDescriptor desc, WorkbenchPage page)
-            throws WorkbenchException {
+	public Perspective(PerspectiveDescriptor desc, MPerspective layout, WorkbenchPage page) {
         this(page);
+		this.layout = layout;
         descriptor = desc;
     }
 
     /**
      * ViewManager constructor comment.
      */
-    protected Perspective(WorkbenchPage page) throws WorkbenchException {
+	protected Perspective(WorkbenchPage page) {
         this.page = page;
         alwaysOnActionSets = new ArrayList(2);
         alwaysOffActionSets = new ArrayList(2);
@@ -302,6 +302,13 @@ public class Perspective {
 				}
 			}
 			addAlwaysOn(newDesc);
+			final String actionSetID = newDesc.getId();
+
+			// Add Tags
+			String tag = ModeledPageLayout.ACTION_SET_TAG + actionSetID;
+			if (!layout.getTags().contains(tag)) {
+				layout.getTags().add(tag);
+			}
 		} finally {
     		service.deferUpdates(false);
     	}

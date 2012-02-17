@@ -130,6 +130,7 @@ import org.eclipse.ui.internal.e4.compatibility.SelectionService;
 import org.eclipse.ui.internal.menus.MenuHelper;
 import org.eclipse.ui.internal.misc.ExternalEditor;
 import org.eclipse.ui.internal.misc.UIListenerLogging;
+import org.eclipse.ui.internal.registry.ActionSetRegistry;
 import org.eclipse.ui.internal.registry.EditorDescriptor;
 import org.eclipse.ui.internal.registry.IActionSetDescriptor;
 import org.eclipse.ui.internal.registry.IWorkbenchRegistryConstants;
@@ -356,6 +357,48 @@ public class WorkbenchPage extends CompatibleWorkbenchPage implements
 			workbenchWindow.updateActionSets();
 			workbenchWindow.firePerspectiveChanged(WorkbenchPage.this, getPerspective(),
 					CHANGE_ACTION_SET_SHOW);
+		}
+	}
+
+	private void updateActionSets(Perspective oldPersp, Perspective newPersp) {
+		// Update action sets
+
+		IContextService service = (IContextService) legacyWindow.getService(IContextService.class);
+		try {
+			service.deferUpdates(true);
+			if (newPersp != null) {
+				IActionSetDescriptor[] newAlwaysOn = newPersp.getAlwaysOnActionSets();
+				for (int i = 0; i < newAlwaysOn.length; i++) {
+					IActionSetDescriptor descriptor = newAlwaysOn[i];
+
+					actionSets.showAction(descriptor);
+				}
+
+				IActionSetDescriptor[] newAlwaysOff = newPersp.getAlwaysOffActionSets();
+				for (int i = 0; i < newAlwaysOff.length; i++) {
+					IActionSetDescriptor descriptor = newAlwaysOff[i];
+
+					actionSets.maskAction(descriptor);
+				}
+			}
+
+			if (oldPersp != null) {
+				IActionSetDescriptor[] newAlwaysOn = oldPersp.getAlwaysOnActionSets();
+				for (int i = 0; i < newAlwaysOn.length; i++) {
+					IActionSetDescriptor descriptor = newAlwaysOn[i];
+
+					actionSets.hideAction(descriptor);
+				}
+
+				IActionSetDescriptor[] newAlwaysOff = oldPersp.getAlwaysOffActionSets();
+				for (int i = 0; i < newAlwaysOff.length; i++) {
+					IActionSetDescriptor descriptor = newAlwaysOff[i];
+
+					actionSets.unmaskAction(descriptor);
+				}
+			}
+		} finally {
+			service.deferUpdates(false);
 		}
 	}
 
@@ -2283,6 +2326,8 @@ public class WorkbenchPage extends CompatibleWorkbenchPage implements
 			}
 		}
 
+
+		legacyWindow.firePerspectiveChanged(this, getPerspective(), CHANGE_ACTION_SET_HIDE);
 		addHiddenItems(tag);
     }
 
@@ -3296,6 +3341,8 @@ UIEvents.UIElement.TOPIC_TOBERENDERED,
 		}
 	}
 
+	private HashMap<MPerspective, Perspective> modelToPerspectiveMapping = new HashMap<MPerspective, Perspective>();
+
 	/*
 	 * (non-Javadoc)
 	 * 
@@ -3307,6 +3354,7 @@ UIEvents.UIElement.TOPIC_TOBERENDERED,
 			return;
 		}
 
+		final MPerspective lastPerspectiveModel = getCurrentPerspective();
 		IPerspectiveDescriptor lastPerspective = getPerspective();
 		if (lastPerspective != null && lastPerspective.getId().equals(perspective.getId())) {
 			// no change
@@ -3321,7 +3369,14 @@ UIEvents.UIElement.TOPIC_TOBERENDERED,
 				}
 
 				// this perspective already exists, switch to this one
+				updateActionSets(modelToPerspectiveMapping.get(lastPerspectiveModel),
+						getActivePerspective());
 				perspectives.setSelectedElement(mperspective);
+				if (!modelToPerspectiveMapping.containsKey(mperspective)) {
+					Perspective p = new Perspective((PerspectiveDescriptor) perspective,
+							mperspective, this);
+					modelToPerspectiveMapping.put(mperspective, p);
+				}
 				mperspective.getContext().activate();
 				legacyWindow.firePerspectiveActivated(this, perspective);
 				return;
@@ -3364,14 +3419,29 @@ UIEvents.UIElement.TOPIC_TOBERENDERED,
 		// Hide placeholders for parts that exist in the 'global' areas
 		modelService.hideLocalPlaceholders(window, modelPerspective);
 
+		updateActionSets(modelToPerspectiveMapping.get(lastPerspectiveModel),
+				getActivePerspective());
+
 		// add it to the stack
 		perspectives.getChildren().add(modelPerspective);
 		// activate it
 		perspectives.setSelectedElement(modelPerspective);
+		if (!modelToPerspectiveMapping.containsKey(modelPerspective)) {
+			Perspective p = new Perspective((PerspectiveDescriptor) perspective, modelPerspective,
+					this);
+			modelToPerspectiveMapping.put(modelPerspective, p);
+		}
 		modelPerspective.getContext().activate();
 		legacyWindow.firePerspectiveActivated(this, perspective);
 
 		UIEvents.publishEvent(UIEvents.UILifeCycle.PERSPECTIVE_OPENED, modelPerspective);
+	}
+
+	void perspectiveActionSetChanged(Perspective perspective, IActionSetDescriptor descriptor,
+			int changeType) {
+		if (perspective == getActivePerspective()) {
+			actionSets.change(descriptor, changeType);
+		}
 	}
 
 
@@ -3459,26 +3529,19 @@ UIEvents.UIElement.TOPIC_TOBERENDERED,
      * @see IWorkbenchPage
      */
     public void showActionSet(String actionSetID) {
-		MPerspective persp = getPerspectiveStack().getSelectedElement();
-		if (persp == null) {
-			return;
-		}
-
-		// Add Tags
-		String tag = ModeledPageLayout.ACTION_SET_TAG + actionSetID;
-		if (!persp.getTags().contains(tag)) {
-			persp.getTags().add(tag);
-
-			// ActionSetManager does reference counting to determine visibility
-			// so don't add action sets that have already been added
-			IActionSetDescriptor descriptor = WorkbenchPlugin.getDefault().getActionSetRegistry()
-					.findActionSet(actionSetID);
-			if (descriptor != null) {
-				actionSets.showAction(descriptor);
-			}
-		}
-
-		removeHiddenItems(tag);
+    	 Perspective persp = getActivePerspective();
+         if (persp != null) {
+             ActionSetRegistry reg = WorkbenchPlugin.getDefault()
+                  .getActionSetRegistry();
+             
+             IActionSetDescriptor desc = reg.findActionSet(actionSetID);
+             if (desc != null) {
+                 persp.addActionSet(desc);
+                 legacyWindow.updateActionSets();
+                 legacyWindow.firePerspectiveChanged(this, getPerspective(),
+                         CHANGE_ACTION_SET_SHOW);
+             }
+         }
     }
 
     /**
@@ -3710,6 +3773,10 @@ UIEvents.UIElement.TOPIC_TOBERENDERED,
 	public MPerspective getCurrentPerspective() {
 		MPerspectiveStack stack = getPerspectiveStack();
 		return stack == null ? null : stack.getSelectedElement();
+	}
+
+	Perspective getActivePerspective() {
+		return modelToPerspectiveMapping.get(getCurrentPerspective());
 	}
 
     /*
